@@ -31,18 +31,35 @@ Este projeto implementa um fluxo simples de RAG com duas etapas principais:
 Crie um arquivo `.env` na raiz do projeto a partir do `.env.example`.
 
 ```env
-OPENAI_API_KEY=
-GEMINI_API_KEY=
+OPENAI_API_KEY=<your_openai_api_key>
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
+GEMINI_API_KEY=<your_gemini_api_key>
+GOOGLE_EMBEDDING_MODEL=models/embedding-001
+
+DATABASE_URL=postgresql+psycopg://langchain:langchain@localhost:5432/langchain
+PG_VECTOR_COLLECTION_NAME=document_chunks
+PDF_PATH=../document.pdf
 ```
 
 O sistema usa OpenAI por padrao quando `OPENAI_API_KEY` estiver definida. Se ela nao existir, usa Gemini quando `GEMINI_API_KEY` estiver definida. Se a OpenAI responder com erro de quota ou rate limit e `GEMINI_API_KEY` estiver configurada, a aplicacao faz fallback automatico para Gemini.
 
-Na pratica, a integracao atual do `langchain-google-genai` usa o identificador `gemini-embedding-001` para embeddings de texto no Gemini.
+Descricao das variaveis:
 
-Opcionalmente, voce pode sobrescrever a conexao do banco com:
+- `OPENAI_API_KEY`: chave da OpenAI para embeddings e chat.
+- `OPENAI_EMBEDDING_MODEL`: modelo de embedding usado com OpenAI. Valor padrao no exemplo: `text-embedding-3-small`.
+- `GEMINI_API_KEY`: chave do Gemini para fallback de embeddings e chat.
+- `GOOGLE_EMBEDDING_MODEL`: modelo de embedding usado com Gemini. Valor padrao no exemplo: `models/embedding-001`.
+- `DATABASE_URL`: string de conexao do PostgreSQL com pgvector.
+- `PG_VECTOR_COLLECTION_NAME`: nome da colecao usada para armazenar os chunks.
+- `PDF_PATH`: caminho do PDF que sera ingerido.
 
-```env
-PGVECTOR_CONNECTION=postgresql+psycopg://langchain:langchain@localhost:5432/langchain
+Na pratica, a integracao atual do `langchain-google-genai` usa o identificador `models/embedding-001` para embeddings de texto no Gemini.
+
+Se quiser manter os valores padrao do projeto, basta copiar o exemplo e substituir apenas as chaves de API:
+
+```bash
+cp .env.example .env
 ```
 
 ## Como executar
@@ -66,7 +83,7 @@ pip install -r requirements.txt
 docker compose up -d
 ```
 
-4. Substitua o arquivo `document.pdf` por um PDF real com o conteudo que sera indexado.
+4. Ajuste `PDF_PATH` no arquivo `.env` para apontar para um PDF real que sera indexado.
 
 5. Rode a ingestao:
 
