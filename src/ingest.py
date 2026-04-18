@@ -11,10 +11,19 @@ from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PDF_PATH = BASE_DIR / "document.pdf"
-COLLECTION_NAME = "document_chunks"
 DEFAULT_DB_URL = "postgresql+psycopg://langchain:langchain@localhost:5432/langchain"
-GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
+
+
+def _get_collection_name() -> str:
+    return os.getenv("PG_VECTOR_COLLECTION_NAME") or "document_chunks"
+
+
+def _get_openai_embedding_model() -> str:
+    return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
+
+def _get_google_embedding_model() -> str:
+    return os.getenv("GOOGLE_EMBEDDING_MODEL") or "models/embedding-001"
 
 
 def load_environment() -> None:
@@ -22,22 +31,22 @@ def load_environment() -> None:
 
 
 def get_database_url() -> str:
-    return os.getenv("PGVECTOR_CONNECTION", DEFAULT_DB_URL)
+    return os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 
 
 def get_provider_keys() -> dict[str, str]:
     provider_keys: dict[str, str] = {}
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    google_api_key = os.getenv("GOOGLE_API_KEY")
 
     if openai_api_key:
         provider_keys["openai"] = openai_api_key
-    if gemini_api_key:
-        provider_keys["gemini"] = gemini_api_key
+    if google_api_key:
+        provider_keys["google"] = google_api_key
 
     if not provider_keys:
         raise ValueError(
-            "Defina OPENAI_API_KEY ou GEMINI_API_KEY no arquivo .env antes de rodar a ingestao."
+            "Defina OPENAI_API_KEY ou GOOGLE_API_KEY no arquivo .env antes de rodar a ingestao."
         )
 
     return provider_keys
@@ -47,11 +56,11 @@ def get_embeddings(provider: str):
     provider_keys = get_provider_keys()
 
     if provider == "openai" and provider in provider_keys:
-        return OpenAIEmbeddings(model="text-embedding-3-small", api_key=provider_keys[provider])
+        return OpenAIEmbeddings(model=_get_openai_embedding_model(), api_key=provider_keys[provider])
 
-    if provider == "gemini" and provider in provider_keys:
+    if provider == "google" and provider in provider_keys:
         return GoogleGenerativeAIEmbeddings(
-            model=GEMINI_EMBEDDING_MODEL,
+            model=_get_google_embedding_model(),
             google_api_key=provider_keys[provider],
         )
 
@@ -82,7 +91,7 @@ def build_provider_failure_message(provider_errors: dict[str, Exception], operat
         provider_list = ", ".join(provider.title() for provider in exhausted_providers)
         return (
             f"Todos os providers configurados falharam por quota ou rate limit durante {operation}: {provider_list}. "
-            "Atualize o saldo/cota da OpenAI ou Gemini, ou troque para chaves com uso disponivel."
+            "Atualize o saldo/cota da OpenAI ou Google, ou troque para chaves com uso disponivel."
         )
 
     details = "; ".join(f"{provider}: {error}" for provider, error in provider_errors.items())
@@ -108,7 +117,7 @@ def ingest_with_provider(chunks, provider: str) -> None:
     PGVector.from_documents(
         documents=chunks,
         embedding=get_embeddings(provider),
-        collection_name=COLLECTION_NAME,
+        collection_name=_get_collection_name(),
         connection=get_database_url(),
         use_jsonb=True,
         pre_delete_collection=True,
@@ -117,14 +126,14 @@ def ingest_with_provider(chunks, provider: str) -> None:
 
 def ingest_documents() -> int:
     load_environment()
-    documents = load_pdf_documents(PDF_PATH)
+    documents = load_pdf_documents(Path(os.getenv("PDF_PATH", "")))
     chunks = split_documents(documents)
 
     if not chunks:
         raise ValueError("Nenhum chunk foi gerado a partir do PDF informado.")
 
     provider_keys = get_provider_keys()
-    provider_order = [provider for provider in ("openai", "gemini") if provider in provider_keys]
+    provider_order = [provider for provider in ("openai", "google") if provider in provider_keys]
     last_error: Exception | None = None
     provider_errors: dict[str, Exception] = {}
 
@@ -137,13 +146,13 @@ def ingest_documents() -> int:
         except Exception as exc:
             last_error = exc
             provider_errors[provider] = exc
-            can_retry = provider == "openai" and "gemini" in provider_keys and is_quota_or_rate_limit_error(exc)
+            can_retry = provider == "openai" and "google" in provider_keys and is_quota_or_rate_limit_error(exc)
             if can_retry:
-                print("OpenAI indisponivel por quota ou rate limit. Tentando Gemini para embeddings.")
+                print("OpenAI indisponivel por quota ou rate limit. Tentando Google para embeddings.")
                 continue
             break
 
-    if last_error and is_quota_or_rate_limit_error(last_error) and "gemini" not in provider_keys:
+    if last_error and is_quota_or_rate_limit_error(last_error) and "google" not in provider_keys:
         raise RuntimeError(build_provider_failure_message(provider_errors, "a ingestao")) from last_error
 
     if last_error:

@@ -45,16 +45,16 @@ def load_environment() -> None:
 def get_provider_keys() -> dict[str, str]:
     provider_keys: dict[str, str] = {}
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    google_api_key = os.getenv("GOOGLE_API_KEY")
 
     if openai_api_key:
         provider_keys["openai"] = openai_api_key
-    if gemini_api_key:
-        provider_keys["gemini"] = gemini_api_key
+    if google_api_key:
+        provider_keys["google"] = google_api_key
 
     if not provider_keys:
         raise ValueError(
-            "Defina OPENAI_API_KEY ou GEMINI_API_KEY no arquivo .env antes de rodar o chat."
+            "Defina OPENAI_API_KEY ou GOOGLE_API_KEY no arquivo .env antes de rodar o chat."
         )
 
     return provider_keys
@@ -66,7 +66,7 @@ def get_llm(provider: str):
     if provider == "openai" and provider in provider_keys:
         return ChatOpenAI(model="gpt-5-nano", api_key=provider_keys[provider], temperature=0)
 
-    if provider == "gemini" and provider in provider_keys:
+    if provider == "google" and provider in provider_keys:
         return ChatGoogleGenerativeAI(
             model="gemini-2.5-flash-lite",
             google_api_key=provider_keys[provider],
@@ -127,7 +127,7 @@ def answer_question(question: str) -> str:
 
     prompt = PROMPT_TEMPLATE.format(context=context, question=clean_question)
     provider_keys = get_provider_keys()
-    provider_order = [provider for provider in ("openai", "gemini") if provider in provider_keys]
+    provider_order = [provider for provider in ("openai", "google") if provider in provider_keys]
     last_error: Exception | None = None
     provider_errors: dict[str, Exception] = {}
 
@@ -151,13 +151,13 @@ def answer_question(question: str) -> str:
         except Exception as exc:
             last_error = exc
             provider_errors[provider] = exc
-            can_retry = provider == "openai" and "gemini" in provider_keys and is_quota_or_rate_limit_error(exc)
+            can_retry = provider == "openai" and "google" in provider_keys and is_quota_or_rate_limit_error(exc)
             if can_retry:
                 print("OpenAI indisponivel por quota ou rate limit. Tentando Gemini para gerar a resposta.")
                 continue
             break
 
-    if last_error and is_quota_or_rate_limit_error(last_error) and "gemini" not in provider_keys:
+    if last_error and is_quota_or_rate_limit_error(last_error) and "google" not in provider_keys:
         raise RuntimeError(build_provider_failure_message(provider_errors, "a geracao da resposta")) from last_error
 
     if last_error:
